@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rpgmv-decrypter"
+version = "1.0.0"
+description = "Decrypt, re-encrypt and restore RPG Maker MV/MZ resource files (.rpgmvp, .rpgmvo, .rpgmvm, .png_, .ogg_, .m4a_)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = [
+    "rpgmvp", "rpgmvm", "rpgmvo", "png_", "ogg_", "m4a_",
+    "rpg-maker", "rpg-maker-mv", "rpg-maker-mz", "decrypt", "encrypt", "restore",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.optional-dependencies]
+gui = ["pyside6-essentials>=6.5"]
+test = ["pytest>=7.0"]
+
+[project.scripts]
+rpgmv-decrypter = "rpgmv_decrypter.cli:main"
+
+[project.gui-scripts]
+rpgmv-decrypter-gui = "rpgmv_decrypter.gui:main"
+
+[project.urls]
+"Reference implementation" = "https://github.com/Petschko/RPG-Maker-MV-Decrypter"
+
+[tool.setuptools]
+packages = ["rpgmv_decrypter"]
+
+[tool.setuptools.package-data]
+# The logo ships inside the package so the window icon is found wherever the code is
+# imported from, not only when the repository happens to be the working directory.
+rpgmv_decrypter = ["py.typed", "assets/*.svg", "assets/*.png", "assets/*.ico"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

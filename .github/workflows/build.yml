@@ -1,0 +1,211 @@
+# Compile the Windows executable, and publish it when a version tag is pushed.
+#
+# Everything here mirrors a command that was run by hand first; nothing is aspirational.
+# Two jobs:
+#
+#   build    - the Nuitka folder build, a ZIP of it, on every push and on demand
+#   release  - attach that ZIP to a GitHub Release when a version tag is pushed
+#
+# The commands the jobs run, which you can try locally:
+#
+#   python setup.py deps --runtime-only        # PySide6 only
+#   python setup.py check                      # exit 0 when the dependencies are there
+#   python build_exe.py                        # compile
+#   python build_exe.py --check                # launch it, decrypt with it, open its window
+#
+# **There is no test job, and that is a deliberate choice.**  This repository ships the
+# program and its build script, not its test suite - the suite stays in the development tree.
+# So there is nothing for a test runner to run, and a job that invoked one would fail on the
+# first push.  What is checked instead is the *artefact*: the build job runs
+# `build_exe.py --check`, which starts the executable, round-trips a real file through
+# encrypt and decrypt, and opens the window offscreen.  That catches a broken build - a
+# missing Qt plugin, a bad entry point, a filesystem layout the program cannot find - but it
+# is NOT a substitute for the test suite.  If you later add `tests/` to this repository, add
+# a test job here as well.
+#
+# No secrets, tokens or repository settings are needed: the built-in GITHUB_TOKEN covers the
+# release upload.
+
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: the build job needs nothing beyond reading the repository, and only the
+# release job may write.  A workflow that can push by default is a liability in a project
+# anyone may fork.
+permissions:
+  contents: read
+
+# A new push to the same branch makes the previous run pointless; cancel it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Qt must not try to open a window on a headless runner.  ``build_exe.py --check`` starts
+  # the window offscreen, which this is what makes possible.
+  QT_QPA_PLATFORM: offscreen
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  build:
+    name: compile the executable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # The project's own installer rather than a parallel pip line that could drift from
+      # what setup.py believes the dependencies are.  ``--runtime-only`` because a build
+      # machine has no use for the test dependencies.
+      - name: Install the dependencies
+        run: python setup.py deps --runtime-only
+
+      - name: Report what is missing
+        run: python setup.py check
+
+      # Nuitka is a source-only distribution, and building it inside pip's isolated
+      # environment has hung for half an hour on a development machine; the flag that fixed
+      # it there is used here too.
+      - name: Install Nuitka
+        run: python -m pip install --no-build-isolation nuitka
+
+      # Nuitka downloads its own MinGW64 toolchain on first use.  Caching where it keeps it
+      # turns several minutes of download into seconds.  The key includes the runner image,
+      # so a new image does not silently reuse a stale toolchain.
+      - name: Cache Nuitka's toolchain
+        uses: actions/cache@v4
+        with:
+          path: .tmp/nuitka-cache
+          key: nuitka-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build_exe.py') }}
+          restore-keys: |
+            nuitka-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Compile
+        run: python build_exe.py --jobs 4
+
+      # This is the only gate in the workflow: it launches the executable, round-trips a
+      # file through encrypt/decrypt and opens the window.  A build that merely produced
+      # files is not a working build.
+      - name: Verify the artefact
+        run: python build_exe.py --check
+
+      - name: Report what was built
+        shell: pwsh
+        run: |
+          $version = python build_exe.py --version
+          "version=$version" >> $env:GITHUB_OUTPUT
+          $size = (Get-ChildItem dist/RPGMakerDecrypter -Recurse -File |
+                   Measure-Object -Property Length -Sum).Sum / 1MB
+          "size={0:N0}" -f $size >> $env:GITHUB_OUTPUT
+          Write-Host "version $version, $('{0:N0}' -f $size) MiB"
+
+      # The artefact is a ZIP of the folder: the executable needs the DLLs and the PySide6
+      # folder beside it, so shipping the .exe alone would not run.
+      #
+      # Packed by ``build_exe.py --zip``, which uses the standard library's ``zipfile`` -
+      # deliberately not ``Compress-Archive`` or ``tar``.  Both were tried and both failed
+      # for reasons unrelated to the archive (``Compress-Archive`` dies when its
+      # ``Write-Progress`` cannot read the console; the ``tar.exe`` on a developer machine
+      # aborted before writing anything), and a release step that depends on the host's
+      # tooling is one that can break for reasons this project cannot control.  The Python
+      # step also verifies its own output: the members are CRC-checked and the executable and
+      # Qt platform plugin are confirmed present, so an empty or truncated archive fails here
+      # instead of in a user's hands.
+      - name: Package as a ZIP
+        run: python build_exe.py --zip
+
+      - name: Upload the ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: RPGMakerDecrypter-windows-x64
+          # Globbed rather than passed through an output: the name carries the version, and
+          # ``--zip`` derives it from pyproject.toml, so there is nothing to keep in step.
+          path: RPGMakerDecrypter-*-windows-x64.zip
+          # ~27 MiB, so worth expiring sooner than the ninety-day default.
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    name: publish the release
+    runs-on: windows-latest
+    needs: build
+    # Only a version tag publishes.  A manual ``workflow_dispatch`` must not: a release built
+    # from an untagged commit has no version to name itself after.
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write # the one job that needs it, for the release upload
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the dependencies
+        run: python setup.py deps --runtime-only
+
+      - name: Install Nuitka
+        run: python -m pip install --no-build-isolation nuitka
+
+      - name: Cache Nuitka's toolchain
+        uses: actions/cache@v4
+        with:
+          path: .tmp/nuitka-cache
+          key: nuitka-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build_exe.py') }}
+          restore-keys: |
+            nuitka-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Compile
+        run: python build_exe.py --jobs 4
+
+      - name: Verify the artefact
+        run: python build_exe.py --check
+
+      # The tag is the source of truth for the version.  If it disagrees with
+      # pyproject.toml the release would be labelled one thing and contain another, so stop
+      # before publishing rather than shipping a mislabelled download.
+      - name: Check the tag against the project version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $project = python build_exe.py --version
+          if ($tag -ne $project) {
+            Write-Error "tag ${{ github.ref_name }} says $tag but pyproject.toml says $project"
+            exit 1
+          }
+          Write-Host "tag and project agree: $project"
+
+      - name: Package as a ZIP
+        run: python build_exe.py --zip
+
+      - name: Create the release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Globbed: ``--zip`` names the file after the version in pyproject.toml, which the
+          # step above has already checked agrees with the tag.
+          files: RPGMakerDecrypter-*-windows-x64.zip
+          generate_release_notes: true
+          body: |
+            Download the ZIP, unzip it anywhere, and double-click `RPGMakerDecrypter.exe`.
+
+            Nothing has to be installed: Python and Qt are inside.  Keep the folder
+            together - the executable needs the DLLs and the `PySide6` folder beside it.
+            To move the tool somewhere else, move the whole folder rather than just the
+            `.exe`.
+
+            Command line, from the same folder:
+
+                decrypter-cli.bat --help
+                decrypter-cli.bat decrypt -k 1234567890abcdef -o out game.rpgmvp
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

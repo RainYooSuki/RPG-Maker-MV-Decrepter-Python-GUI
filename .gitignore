@@ -1,0 +1,27 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# What build_exe.py produces
+build/
+dist/
+*.spec
+
+# Nuitka's downloaded toolchain and its compiled-artefact cache
+.tmp/
+nuitka-cache/
+
+# Virtual environment (recreate with: python -m venv .venv)
+.venv/
+venv/
+
+# GUI results: one <timestamp>/ folder per run
+output/
+
+# Logs
+*.log
