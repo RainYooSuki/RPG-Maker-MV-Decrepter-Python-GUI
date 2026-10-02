@@ -35,6 +35,7 @@ name: build
 #
 #   actions/checkout@v5          actions/setup-python@v6
 #   actions/upload-artifact@v6   actions/cache@v5
+#   softprops/action-gh-release@v3
 #
 # `cache@v5` needs a runner at 2.327.1 or newer; `windows-latest` always is.  If you
 # pin the runner to an old image, drop that one back to `@v4`.
@@ -239,7 +240,7 @@ jobs:
         run: python build_exe.py --zip
 
       - name: Create the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           # Globbed: ``--zip`` names the file after the version in pyproject.toml, which the
           # step above has already checked agrees with the tag.
