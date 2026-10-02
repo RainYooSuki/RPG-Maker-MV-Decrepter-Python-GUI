@@ -975,9 +975,30 @@ git push origin v1.0.0
 .\.venv\Scripts\python.exe tools\check_workflow.py
 ```
 
-它会检查 YAML 能否解析、用到的 action 是否都锁了主版本号、提到的文件是否都存在、要跑的
-命令是否是 `setup.py` / `build_exe.py` 真有的子命令与开关、`steps.<id>` 和 `matrix.<name>`
-是否都有定义、以及"只有 release 任务能写仓库""没有 tag 不许发布"这类容易写错的地方。
+它会检查：YAML 能否解析、action 是否都锁了主版本号（且没停留在会触发 Node 弃用警告的旧版本）、
+提到的文件是否存在、命令是否是 `setup.py` / `build_exe.py` 真有的开关、`steps.<id>` 与
+`matrix.<name>` 是否都有定义，以及几条**工程不变量** —— 包括「只有 release 任务能写仓库」、
+「没有 tag 不许发布」，和下面这条。
+
+### 一个真实的构建约束
+
+CI 里装 Nuitka 用的是：
+
+```bash
+python -m pip install --no-build-isolation setuptools wheel nuitka
+```
+
+**三个包必须一起装，不能只装 nuitka。** Nuitka 只发布源码包（sdist），而
+`--no-build-isolation` 让 pip 用**当前环境**的后端去构建它 —— 那个后端就是 setuptools。少了它
+pip 会直接停在：
+
+```text
+BackendUnavailable: Cannot import 'setuptools.build_meta'
+```
+
+`build_exe.py` 自己的安装器本来就是三个一起装，workflow 里那一步曾经只写了 `nuitka`，绕过了它。
+现在两边一致，并且 `tools/check_workflow.py` 会**强制**这条配对：任何带
+`--no-build-isolation` 的 pip 命令都必须同时出现 setuptools 和 wheel。
 
 ### 不需要配置任何东西
 

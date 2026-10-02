@@ -34,15 +34,23 @@ name: build
 # the ones that run on the current Node:
 #
 #   actions/checkout@v5          actions/setup-python@v6
-#   actions/upload-artifact@v5   actions/cache@v5
+#   actions/upload-artifact@v6   actions/cache@v5
 #
 # `cache@v5` needs a runner at 2.327.1 or newer; `windows-latest` always is.  If you
 # pin the runner to an old image, drop that one back to `@v4`.
 
 on:
   push:
+    # Branches are built; only a tag publishes - see the `release` job below.
     branches: ["**"]
-    tags: ["v*"]
+    # Three patterns rather than one, because GitHub's filter is a glob and a single
+    # `v*` silently ignores a tag named `1.0.0`.  Writing the tag without the `v` is
+    # the easy mistake, and the failure mode is silence: the run simply never starts, with
+    # nothing in the log to explain why.  `*.*` is what catches the bare form.
+    tags:
+      - "v*"
+      - "v*.*"
+      - "*.*"
   pull_request:
   workflow_dispatch:
 
@@ -148,7 +156,7 @@ jobs:
         run: python build_exe.py --zip
 
       - name: Upload the ZIP
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: RPGMakerDecrypter-windows-x64
           # Globbed rather than passed through an output: the name carries the version, and
@@ -164,7 +172,11 @@ jobs:
     needs: build
     # Only a version tag publishes.  A manual ``workflow_dispatch`` must not: a release built
     # from an untagged commit has no version to name itself after.
-    if: startsWith(github.ref, 'refs/tags/v')
+    #
+    # Either a ``v1.0.0`` or a bare ``1.0.0`` tag is accepted, because the trigger's tag
+    # filter already admits both and a version is a version; the step further down compares
+    # the number against pyproject.toml and stops if the two disagree.
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write # the one job that needs it, for the release upload
     steps:
