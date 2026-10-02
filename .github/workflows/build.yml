@@ -84,16 +84,23 @@ jobs:
       - name: Report what is missing
         run: python setup.py check
 
-      # Nuitka is published as a source distribution only.  `--no-build-isolation` makes pip
-      # build it with *this* environment's backend instead of a throwaway one, which is what
-      # avoids the isolated build that once hung for half an hour - but it also means
-      # setuptools and wheel have to be present already, because they *are* that backend.
-      # Without them pip fails with `BackendUnavailable: Cannot import
-      # 'setuptools.build_meta'`.  The three are installed together, in one command, exactly
-      # as `build_exe.py`'s own installer does it - so there is one rule and no second place
-      # for it to differ.
-      - name: Install Nuitka and its build backend
-        run: python -m pip install --no-build-isolation setuptools wheel nuitka
+      # Plain `pip install`, with build isolation left ON.  Nuitka is published as a source
+      # distribution only, so pip has to build it - and build isolation is what makes that
+      # work anywhere: pip creates a throwaway environment, installs the backend the package
+      # asks for, and builds there.
+      #
+      # `--no-build-isolation` was tried here and is the wrong tool.  It makes pip use the
+      # *host* environment's backend, so setuptools and wheel must already be installed - and
+      # since Python 3.12 no longer bundles setuptools, a runner does not have them.  The
+      # result was `BackendUnavailable: Cannot import 'setuptools.build_meta'`.  Naming the
+      # three packages together would also work, but it is a pairing that has to hold on every
+      # machine forever; letting pip do its job has nothing to keep in step.
+      #
+      # The half-hour hang that motivated the flag was a sandbox on one development machine
+      # refusing writes to `%LOCALAPPDATA%` - a local failure that was mistaken for pip's
+      # behaviour.
+      - name: Install Nuitka
+        run: python -m pip install nuitka
 
       # Nuitka downloads its own MinGW64 toolchain on first use.  Caching where it keeps it
       # turns several minutes of download into seconds.  The key includes the runner image,
@@ -170,16 +177,23 @@ jobs:
       - name: Install the dependencies
         run: python setup.py deps --runtime-only
 
-      # Nuitka is published as a source distribution only.  `--no-build-isolation` makes pip
-      # build it with *this* environment's backend instead of a throwaway one, which is what
-      # avoids the isolated build that once hung for half an hour - but it also means
-      # setuptools and wheel have to be present already, because they *are* that backend.
-      # Without them pip fails with `BackendUnavailable: Cannot import
-      # 'setuptools.build_meta'`.  The three are installed together, in one command, exactly
-      # as `build_exe.py`'s own installer does it - so there is one rule and no second place
-      # for it to differ.
-      - name: Install Nuitka and its build backend
-        run: python -m pip install --no-build-isolation setuptools wheel nuitka
+      # Plain `pip install`, with build isolation left ON.  Nuitka is published as a source
+      # distribution only, so pip has to build it - and build isolation is what makes that
+      # work anywhere: pip creates a throwaway environment, installs the backend the package
+      # asks for, and builds there.
+      #
+      # `--no-build-isolation` was tried here and is the wrong tool.  It makes pip use the
+      # *host* environment's backend, so setuptools and wheel must already be installed - and
+      # since Python 3.12 no longer bundles setuptools, a runner does not have them.  The
+      # result was `BackendUnavailable: Cannot import 'setuptools.build_meta'`.  Naming the
+      # three packages together would also work, but it is a pairing that has to hold on every
+      # machine forever; letting pip do its job has nothing to keep in step.
+      #
+      # The half-hour hang that motivated the flag was a sandbox on one development machine
+      # refusing writes to `%LOCALAPPDATA%` - a local failure that was mistaken for pip's
+      # behaviour.
+      - name: Install Nuitka
+        run: python -m pip install nuitka
 
       - name: Cache Nuitka's toolchain
         uses: actions/cache@v5

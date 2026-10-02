@@ -151,18 +151,25 @@ def nuitka_available() -> bool:
 def install_nuitka() -> int:
     """Install Nuitka, from the Tsinghua mirror when it is reachable.
 
-    ``--no-build-isolation`` is required rather than an optimisation: Nuitka is published as
-    a source distribution only, so pip otherwise builds it in an isolated environment, and
-    that step has been observed to hang for half an hour with no output.  Building against
-    the current environment takes seconds.
+    Plain build isolation, deliberately.  Nuitka is published as a source distribution only,
+    so pip has to build it, and isolation is what makes that work on any machine: pip creates
+    a throwaway environment and installs the backend the package declares.
+
+    ``--no-build-isolation`` was tried here first and is the wrong tool.  It makes pip use the
+    *host* environment's backend, which since Python 3.12 does not include setuptools, so the
+    install fails with ``BackendUnavailable: Cannot import 'setuptools.build_meta'``.  Naming
+    setuptools and wheel explicitly also works, but that is a pairing which has to hold on
+    every machine forever.
+
+    The half-hour hang that motivated the flag was this machine's sandbox refusing writes to
+    ``%LOCALAPPDATA%`` - a local failure mistaken for pip's behaviour.
     """
     mirror = "https://pypi.tuna.tsinghua.edu.cn/simple"
     command = [
         str(PYTHON), "-m", "pip", "install",
         "--no-cache-dir",
-        "--no-build-isolation",
         "-i", mirror,
-        "setuptools", "wheel", "nuitka",
+        "nuitka",
     ]
     print("installing Nuitka from the Tsinghua mirror")
     print("  " + " ".join(command))
